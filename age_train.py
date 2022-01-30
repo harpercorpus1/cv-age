@@ -67,7 +67,7 @@ def gen_sig():
     return model
 
 def conv_layer(data, filters=64):
-    output_data = Conv2D(filters, (3,3), activation='relu')(data)
+    output_data = Conv2D(filters, (3,3), activation='relu', padding='same')(data)
     output_data = MaxPool2D(pool_size=(2,2))(output_data)
     output_data = BatchNormalization()(output_data)
     return Dropout(0.25)(output_data)
@@ -77,10 +77,10 @@ def age_image_conv_nn(images):
     processed_im = RandomRotation(0.2)(processed_im)
 
     processed_im = conv_layer(processed_im, 64)
-    processed_im = conv_layer(processed_im, 64)
-    processed_im = conv_layer(processed_im, 64)
+    processed_im = conv_layer(processed_im, 128)
+    processed_im = conv_layer(processed_im, 256)
 
-    return conv_layer(processed_im, 64)
+    return conv_layer(processed_im, 512)
 
 def Dense_Normal(input_data, dimension=64, activ='relu', drop_rate=0.25):
     output_data = Dense(dimension, activation=activ)(input_data)
@@ -111,8 +111,38 @@ def age_linear_model():
     model.compile(loss='mean_absolute_error', optimizer='adam', metrics=['mse'])
     return model
 
+def age_softmax_model(num_classes):
+    image_input = Input((200,200,3))
+    image_x = age_image_conv_nn(image_input)
+    image_x = Flatten()(image_x)
+
+    gender_input = Input((1,))
+    gender_x = age_gender_processing_ann(gender_input)
+
+    combined_input = concatenate([image_x,gender_x])
+    
+    combined_output = Dense_Normal(combined_input, 256)
+    combined_output = Dense_Normal(combined_output, 256)
+    combined_output = Dense_Normal(combined_output, 256)
+    
+    combined_output = Dense(num_classes, activation='softmax')(combined_output)
+
+    model = Model(inputs=[image_input, gender_input], outputs=combined_output)
+
+    model.compile(loss='mean_absolute_error', optimizer='adam', metrics=['accuracy'])
+    return model
+
 def predict(ageModel, genderModel, input):
     pred = round(genderModel.predict(input)[0][0])
+    return ageModel.predict([input, pred])
+
+def produce_categorical_by_bounds(input, num_classes):
+    ageMax = 116 ; ageMin = 0
+    bound_len = ((ageMax-ageMin)/(num_classes))+0.01
+    output = np.zeros(num_classes*len(input)).reshape(len(input), num_classes)
+    for count, i in enumerate(input):
+        output[count][int(i[0]/bound_len)] = 1
+    return output
 
 
 gpus = tf.config.list_physical_devices('GPU')
@@ -160,16 +190,41 @@ def get_subset(set_n):
                 break
     return df_subset, df_output
 
+def get_softmax_subset(set_n, num_classes):
+    directory = 'UTKFace'
+    ds_len = 0 
+    for filename in os.listdir(directory):
+        if filename.endswith(".jpg"):
+            ds_len += 1
+        else:
+            print(filename)
+    found_ind = 0
+    df_subset = np.zeros((len(sets[set_n])* 200*200*3), dtype='float32').reshape(-1,200,200,3)
+    df_output = np.zeros((len(sets[set_n])), dtype='int8').reshape(len(sets[set_n]), 1)
+    for count, filename in enumerate(os.listdir(directory)):
+        if count == sets[set_n][found_ind]:
+            df_subset[found_ind] = asarray(Image.open(f'UTKFace/{filename}'))
+            df_output[found_ind][0] = int(filename.split('_')[0])
+            found_ind += 1
+            if found_ind == len(sets[set_n]):
+                break
+    return df_subset, produce_categorical_by_bounds(df_output, num_classes=num_classes)
+
 
 random.seed(time.time())
-train_times = 1
+train_times = 10
 numSets = 50
 
+from resnet34 import *
 
-ageModel = age_linear_model()
+# ageModel = get_resnet34_model(5)
 
+# ageModel = age_softmax_model(5)
+# ageModel.load_weights('./checkpoints/age_check_softmax_1_25')
 
 for train in range(train_times):
+    ageModel = get_resnet34_model()
+    ageModel.load_weights('./checkpoints/age_check_resnet_34_256')
     allNums = random.sample(range(ds_len), ds_len)
     sets = [0]*numSets
     for i in range(numSets):
@@ -180,18 +235,18 @@ for train in range(train_times):
         trainX, testX, trainY, testY = train_test_split(X, y, test_size=0.2)
         train_gender_predictions = np.array([genderModel.predict(i.reshape(-1,200,200,3)) for i in trainX]).reshape(len(trainX),1)
         test_gender_predictions = np.array([genderModel.predict(i.reshape(-1,200,200,3)) for i in testX]).reshape(len(testX),1)
-        complete_train_X = tf.data.Dataset.zip((trainX, train_gender_predictions))
-        complete_test_X = tf.data.Dataset.zip((testX, test_gender_predictions))
+        # complete_train_X = tf.data.Dataset.zip((trainX, train_gender_predictions))
+        # complete_test_X = tf.data.Dataset.zip((testX, test_gender_predictions))
         hist = ageModel.fit(
-            x=complete_train_X, 
+            x=[trainX, train_gender_predictions], 
             y = trainY, 
-            epochs=1, 
-            batch_size=64, 
-            validation_data=(complete_test_X, testY), 
-            verbose=0
+            epochs=100, 
+            batch_size=128, 
+            validation_data=([testX, test_gender_predictions], testY) #,
+            # verbose=0
         )
-        print('model accuracy {}-{}: {}'.format(train, i, hist.history['mse'][-1]))
-        ageModel.save_weights('./checkpoints/age_check_Jan_12_12_28')
+        print('model mse {}-{}: {}'.format(train, i, hist.history['mse'][-1]))
+        ageModel.save_weights('./checkpoints/age_check_resnet_34_256')
 
 # allNums = random.sample(range(ds_len), ds_len)
 # sets = [0]*numSets

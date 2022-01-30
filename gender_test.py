@@ -213,7 +213,7 @@ for count, filename in enumerate(os.listdir('UTKFace')):
     if filename.endswith(".jpg"):
         img = asarray(Image.open(f'UTKFace/{filename}')).reshape(1,200,200,3)
         # plt.imshow(Image.open(f'UTKFace/{filename}'))
-        # plt.savefig(f'fig_{count}.jpg')
+        plt.savefig(f'fig_{count}.jpg')
         pred = round(ageModel.predict(img)[0][0])
         # print(f'{count}_{filename}_{pred}')
 

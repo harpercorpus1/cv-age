@@ -31,16 +31,6 @@ if gpus:
     # Memory growth must be set before GPUs have been initialized
     print(e)
 
-directory = 'UTKFace'
-ds_len = 0 
-for filename in os.listdir(directory):
-    if filename.endswith(".jpg"):
-        ds_len += 1
-    else:
-        print(filename)
-        
-        continue
-
 def data_aug(x):
     x = RandomFlip("horizontal_and_vertical")(x)
     x = RandomRotation(0.2)(x)
@@ -89,10 +79,11 @@ def sigmoid_model():
     
     return model
 
-def sig():
+def sig(noise=0, inputSize=(200,200,3)):
     model = Sequential([
-        Input((200,200,3)),
+        Input(inputSize),
 
+        GaussianNoise(noise),
         RandomFlip("horizontal_and_vertical"),
         RandomRotation(0.2),
         
@@ -135,39 +126,68 @@ def sig():
     model.compile(loss='mean_absolute_error', optimizer='adam', metrics=['accuracy'])
     return model
 
-def get_subset(set_n):
+def get_subset(set_n, directory='UTKFace'):
+    if directory == 'UTKFace_bw':
+        inputSize=(200,200,1)
+    else:
+        inputSize=(200,200,3)
+
     found_ind = 0
-    df_subset = np.zeros((len(sets[set_n])* 200*200*3), dtype='float32').reshape(-1,200,200,3)
+    df_subset = np.zeros((len(sets[set_n])* inputSize[0] * inputSize[1] * inputSize[2]), dtype='float32').reshape(-1,inputSize[0],inputSize[1],inputSize[2])
     df_output = np.zeros((len(sets[set_n])), dtype='int8').reshape(len(sets[set_n]), 1)
     for count, filename in enumerate(os.listdir(directory)):
         if count == sets[set_n][found_ind]:
-            df_subset[found_ind] = asarray(Image.open(f'UTKFace/{filename}'))
+            df_subset[found_ind] = asarray(Image.open(f'{directory}/{filename}')).reshape(inputSize)
             df_output[found_ind][0] = int(filename.split('_')[1])
             found_ind += 1
             if found_ind == len(sets[set_n]):
                 break
     return df_subset, df_output
 
-genderMode = sig()
-
-# genderMode.load_weights('./checkpoints/gender_check_Jan_11_1_12')
+from resnet34 import *
 
 random.seed(time.time())
-train_times = 1
-numSets = 50
+train_times = 15
+numSets = 20
+
+from resnet34 import *
+
+
+directory = 'UTKFace_bw'
+ds_len = 0 
+for filename in os.listdir(directory):
+    if filename.endswith(".jpg"):
+        ds_len += 1
+    else:
+        print(filename)
+        
+        continue
 
 for train in range(train_times):
-    allNums = random.sample(range(ds_len), ds_len)
-    sets = [0]*numSets
-    for i in range(numSets):
-        sets[i] = sorted(allNums[((ds_len//numSets) * i) : ((ds_len//numSets) * (i+1))])
+    for noise in range(15, 0, -1):
+        allNums = random.sample(range(ds_len), ds_len)
+        sets = [0]*numSets
+        for i in range(numSets):
+            sets[i] = sorted(allNums[((ds_len//numSets) * i) : ((ds_len//numSets) * (i+1))])
 
-    for i in range(int(numSets*0.6)):
-        X, y = get_subset(i)
-        trainX, testX, trainY, testY = train_test_split(X, y, test_size=0.2)
-        hist = genderMode.fit(trainX, trainY, epochs=50, batch_size=64, validation_data=(testX, testY), verbose=0)
-        print('model accuracy {}-{}: {}'.format(train, i, hist.history['accuracy'][-1]))
-        genderMode.save_weights('./checkpoints/gender_check_Jan_11_9_24')
+        # genderModel = get_sigmoid_resnet34_model(noise, (200,200,1))
+        # genderModel.load_weights('./checkpoints/gender_resnet_bw')
+        genderModel = sig(noise=noise, inputSize=(200,200,1))
+        genderModel.load_weights('./checkpoints/gender_cnn_sig')
+        for i in range(int(numSets)):
+            X, y = get_subset(i, 'UTKFace_bw')
+            trainX, testX, trainY, testY = train_test_split(X, y, test_size=0.2)
+            hist = genderModel.fit(
+                trainX, 
+                trainY, 
+                epochs=30, 
+                batch_size=32, 
+                validation_data=(testX, testY), 
+                verbose=0
+            )
+            print(f'iteration-{train} noise-{noise} set-{i} accuracy (train/validation)-({round(hist.history["accuracy"][-1], 3)}/{round(hist.history["val_accuracy"][-1], 3)})')
+            # print('iteration-{} noise-{} set-{}: accuracy-{}'.format(train, noise, i, hist.history['accuracy'][-1]))
+            genderModel.save_weights('./checkpoints/gender_cnn_sig')
 
 # allNums = random.sample(range(ds_len), ds_len)
 # sets = [0]*numSets

@@ -136,6 +136,35 @@ def get_subset(set_n):
                 break
     return df_subset, df_output
 
+def produce_categorical_by_bounds(input, num_classes):
+    ageMax = 116 ; ageMin = 0
+    bound_len = ((ageMax-ageMin)/(num_classes))+0.01
+    output = np.zeros(num_classes*len(input)).reshape(len(input), num_classes)
+    for count, i in enumerate(input):
+        output[count][int(i[0]/bound_len)] = 1
+    return output
+
+def get_softmax_subset(set_n, num_classes):
+    directory = 'UTKFace'
+    ds_len = 0 
+    for filename in os.listdir(directory):
+        if filename.endswith(".jpg"):
+            ds_len += 1
+        else:
+            print(filename)
+    found_ind = 0
+    df_subset = np.zeros((len(sets[set_n])* 200*200*3), dtype='float32').reshape(-1,200,200,3)
+    df_output = np.zeros((len(sets[set_n])), dtype='int8').reshape(len(sets[set_n]), 1)
+    for count, filename in enumerate(os.listdir(directory)):
+        if count == sets[set_n][found_ind]:
+            df_subset[found_ind] = asarray(Image.open(f'UTKFace/{filename}'))
+            df_output[found_ind][0] = int(filename.split('_')[0])
+            found_ind += 1
+            if found_ind == len(sets[set_n]):
+                break
+    return df_subset, produce_categorical_by_bounds(df_output, num_classes=num_classes)
+
+
 
 # ageGroups = [[0,0] for _ in range(12)]
 # for count, filename in enumerate(os.listdir('UTKFace')):
@@ -160,14 +189,14 @@ genderModel.load_weights('./checkpoints/gender_check_Jan_11_1_12')
 # ageModel = age_linear_model()
 # ageModel.load_weights('./checkpoints/age_check_Jan_13_10_47_second')
 from resnet34 import *
-ageModel = get_resnet34_model()
-ageModel.load_weights('./checkpoints/age_check_resnet_34')
+ageModel = get_softmax_resnet34_model(20)
+ageModel.load_weights('./checkpoints/age_check_resnet_softmax')
 
 random.seed(time.time())
 train_times = 1
 numSets = 50
 
-directory = 'UTKFace'
+directory = 'UTKFace_Edited'
 ds_len = 0 
 for filename in os.listdir(directory):
     if filename.endswith(".jpg"):
@@ -183,7 +212,7 @@ for i in range(numSets):
     sets[i] = sorted(allNums[((ds_len//numSets) * i) : ((ds_len//numSets) * (i+1))])
 
 
-df_input, df_output = get_subset(0)
+df_input, df_output = get_softmax_subset(0, 20)
 
 # print(df_input.shape)
 
@@ -199,7 +228,11 @@ for count, img in enumerate(df_input):
     image_resized = img.reshape(-1,200,200,3)
     pred = np.around(genderModel.predict(image_resized)[0])
     print(pred)
-    print(ageModel.predict([image_resized, pred]))
+    age_pred = ageModel.predict([image_resized, pred])
+    print(age_pred)
+    print(age_pred.argmax())
+    print(f'actual: {df_output[count].argmax()}')
+
 
 # count = 0; tot_error = 0
 # for img in df_input:

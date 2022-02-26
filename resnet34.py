@@ -7,10 +7,11 @@ import random
 import time
 
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import concatenate, Add, AvgPool2D, Activation, RandomFlip, Input, RandomRotation, Conv2D, BatchNormalization, MaxPool2D, Dropout, Flatten, Dense
+from tensorflow.keras.layers import RandomTranslation, GaussianNoise, concatenate, Add, AvgPool2D, Activation, RandomFlip, Input, RandomRotation, Conv2D, BatchNormalization, MaxPool2D, Dropout, Flatten, Dense
 from tensorflow.keras.utils import to_categorical
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.models import Model
+from tensorflow.keras.optimizers import RMSprop, Nadam;
 
 from tensorflow.keras.regularizers import l2
 
@@ -69,17 +70,13 @@ def Dense_Normal(input_data, dimension=64, activ='relu', drop_rate=0.25):
     output_data = BatchNormalization()(output_data)
     return Dropout(drop_rate)(output_data)
 
-def get_resnet34_model():
-    image_input = Input((200,200,3))
-    
+def ensemble_structure(image_input, gender_input):
     image_output = layer_1(image_input)
     image_output = layer_2(image_output)
     image_output = layer_3(image_output)
     image_output = layer_4(image_output)
     image_output = layer_5(image_output)
     image_output = outbound_processing(image_output)
-
-    gender_input = Input((1,))
 
     gender_output = Dense_Normal(gender_input)
 
@@ -88,6 +85,16 @@ def get_resnet34_model():
     combined_output = Dense_Normal(combined_input, dimension=256)
     combined_output = Dense_Normal(combined_output, dimension=256)
 
+    return combined_output
+
+def get_linear_resnet34_model():
+    image_input = Input((200,200,3))
+    gender_input = Input((1,))
+
+    image_input = GaussianNoise(15)(image_input)
+
+    combined_output = ensemble_structure(image_input, gender_input)
+
     combined_output = Dense(1, activation='linear')(combined_output)
 
     model = Model(inputs=[image_input, gender_input], outputs=combined_output)
@@ -95,7 +102,55 @@ def get_resnet34_model():
     model.compile(loss='mean_absolute_error', optimizer='adam', metrics=['mse'])
     return model
 
+def get_softmax_resnet34_model(num_categories=15, noise_size=15, inputSize=(200,200,3)):
+    image_input = Input(inputSize)
+    gender_input = Input((1,))
 
+    image_output = tf.image.resize(image_input, [224,224], method='bilinear')
+    image_output = GaussianNoise(noise_size)(image_output)
+    image_output = RandomTranslation(height_factor=0.1, width_factor=0.1, fill_mode='constant')(image_output)
+    image_output = RandomFlip('horizontal')(image_output)
+    image_output = RandomRotation(0.2)(image_output)
+
+    combined_output = ensemble_structure(image_output, gender_input)
+
+    combined_output = Dense(num_categories, activation='softmax')(combined_output)
+
+    model = Model(inputs=[image_input, gender_input], outputs=combined_output)
+
+    model.compile(loss='mean_squared_error', optimizer='adam', metrics=['accuracy'])
+    return model
+
+def solo_input_structure(image_input):
+    image_output = layer_1(image_input)
+    image_output = layer_2(image_output)
+    image_output = layer_3(image_output)
+    image_output = layer_4(image_output)
+    image_output = layer_5(image_output)
+    image_output = outbound_processing(image_output)
+    
+    image_output = Dense_Normal(image_output, dimension=256)
+    image_output = Dense_Normal(image_output, dimension=256)
+
+    return image_output
+
+def get_sigmoid_resnet34_model(noise_size=15, inputSize=(200,200,3)):
+    image_input = Input(inputSize)
+
+    image_output = GaussianNoise(noise_size)(image_input)
+    image_output = RandomFlip('horizontal')(image_output)
+    image_output = RandomRotation(0.2)(image_output)
+
+    image_output = solo_input_structure(image_output)
+
+    image_output = Dense(1, activation='sigmoid')(image_output)
+
+    model = Model(inputs=image_input, outputs=image_output)
+
+    opt = Nadam()
+
+    model.compile(loss='binary_crossentropy', optimizer=opt, metrics=['accuracy'])
+    return model
 
 
 # AxA conv, B /C

@@ -1,3 +1,5 @@
+# This is an in-progress repository, [incomplete]
+
 # cv-age
 
 ### Age and Sex Prediction using Deep Learning
@@ -16,9 +18,13 @@
   - [An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale](https://arxiv.org/pdf/2010.11929)
   - pretrained ViT Base Model used for testing [Vision Transformer (base-sized model)](https://huggingface.co/google/vit-base-patch16-224)
 
-#### Dataset
+#### Datasets
 - UTKFace
   - 20k+ images [UTKFace Source](https://susanqq.github.io/UTKFace/)
+- IMDB
+  - 460k+ images [IMDB Source](https://data.vision.ee.ethz.ch/cvl/rrothe/imdb-wiki/)
+- Wikipedia
+  - 62k+ images [Wikipedia Source](https://data.vision.ee.ethz.ch/cvl/rrothe/imdb-wiki/)
 
 #### Dependencies
 - torch
@@ -31,3 +37,5 @@
   - python -m pip install tensorflow
 - numpy
   - python -m pip install numpy
+- pillow
+  - python3 -m pip install --upgrade Pillow
